@@ -45,8 +45,8 @@ library(kknn)
 library(timetk)
 
 
-source('utils.R')
-source("utils-api.R")
+source('R/utils.R')
+source("R/utils-api.R")
 ```
 
 ```{r context="server"}
