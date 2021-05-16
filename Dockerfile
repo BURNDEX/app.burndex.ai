@@ -27,7 +27,6 @@ RUN Rscript -e "remotes::install_github('mikejohnson51/climateR')"
 
 # Install Data Processing Dependencies
 RUN install2.r -e -s \
-    dygraphs \
     gt \
     janitor \
     formattable
