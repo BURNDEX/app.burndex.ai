@@ -1,3 +1,8 @@
+# --- TEST POINT ---
+# lat = 34.7
+# lon = -119.7
+# pt = c(lon, lat)
+# pt = data.frame(lon, lat)
 
 # send post request to API to create AOI poly
 api_aoi <- function(pt) {
@@ -28,6 +33,7 @@ fire_time_api <- function(pt) {
   ))
   jsonlite::fromJSON(post[[1]])
 }
+
 
 bx_handle <- function() {
   httr::handle("https://api.burndex.ai/")

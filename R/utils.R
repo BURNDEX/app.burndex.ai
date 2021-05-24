@@ -225,13 +225,13 @@ get_raster <- function(bb, start_date = NULL, end_date = NULL) {
 }
 
 # map click --> get AOI climate raster
-get_prediction <- function(aoi, start = NULL, end = NULL, model) {
-  agg <- aggregate_maca(aoi,
-                        start_date = as.character(start),
-                        end_date = as.character(end))
-  cbi <- augment(model, agg) %>%
-    tidy_to_raster(x = lon, y = lat, z = .pred)
-}
+# get_prediction <- function(aoi, start = NULL, end = NULL, model) {
+#   agg <- aggregate_maca(aoi,
+#                         start_date = as.character(start),
+#                         end_date = as.character(end))
+#   cbi <- augment(model, agg) %>%
+#     tidy_to_raster(x = lon, y = lat, z = .pred)
+# }
 
 get_classes <- function(rast, lvls){
   int <- seq(
