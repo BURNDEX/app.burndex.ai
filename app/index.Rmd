@@ -24,6 +24,7 @@ library(USAboundaries)
 library(USAboundariesData)
 library(dataRetrieval)
 library(climateR)
+library(units)
 # library(elevatr)
 
 # Data processing
@@ -39,7 +40,6 @@ library(lwgeom)
 
 # Modeling libraries
 library(tidymodels)
-library(kknn)
 library(timetk)
 
 source('utils.R')
@@ -64,7 +64,7 @@ span.code {
 # kknn_model <- readRDS("kknn_model.rds")
 # 
 # # Yearly state acreage burned for timeseries
-# fire_ts <- readRDS("fire_timeseries_data.rds")
+fire_ts <- readRDS("fire_timeseries_data.rds")
 # 
 # path <- "us_fire_perim.gdb"
 
@@ -146,6 +146,7 @@ verbatimTextOutput("clickText")
 # output$summaryTable <- render_gt({
 #           summaryData()
 #       })
+
 ```
 
 ```{r context = "server"}
@@ -254,6 +255,7 @@ formattableOutput("fireTable")
 # output$fireTable2 <- renderFormattable({
 #           fireData2()
 #       })
+
 ```
 
 ```{r context = "server"}
@@ -282,7 +284,7 @@ formattableOutput("fireTable")
             color = "#AD343E")
       })
     
-        fires <- fire_perims_api(make_point())
+        fires <- fire_perims_api(pt)
           # fires <<- get_fires(bb, path)
         leafletProxy("map1") %>%
               clearMarkers() %>%
@@ -317,18 +319,17 @@ formattableOutput("fireTable")
                            weight = 2) %>% 
               flyToBounds(bounds[1], bounds[2], bounds[3], bounds[4])
               
-          df <- make_point()
-      
+          
       output$fireTable <- renderFormattable({
-                fire_table(fire_perims_api(df))
+                fire_table(fires)
       })
-        
-         ts <- fire_time_api(pt = df)
+              ts <- sf::st_filter(fire_ts, pt)
+         # ts <- fire_time_api(pt = df)
           
       output$fireGraph <- renderHighchart({
               highchart() %>%
                   hc_add_theme(hc_theme_alone()) %>%
-                  hc_add_series(data = ts, name = "ACRES BURNED", type = "column", hcaes(x = year, y = acres)) %>%
+                  hc_add_series(data = ts, name = "ACRES BURNED", type = "column", hcaes(x = year_, y = acres)) %>%
                   hc_yAxis(title = list(text = "Acres")) %>% 
                   hc_chart(plotBorderWidth = 1, plotBorderColor = '#b4b4b4', height = NULL) %>%
                   hc_colors("darkred") %>%
@@ -366,7 +367,7 @@ formattableOutput("fireTable")
             icon = icon("user"),
             color = "#AD343E") })
     
-      fires <- fire_perims_api(make_point2())
+      fires <- fire_perims_api(pt)
       # fires <<- get_fires(bb, path)
     
       leafletProxy("map1") %>%
@@ -402,17 +403,18 @@ formattableOutput("fireTable")
                      weight = 2) %>% 
         flyToBounds(bounds[1], bounds[2], bounds[3], bounds[4])
      
-      df <- make_point2()
+      
           output$fireTable <- renderFormattable({
-                fire_table(fire_perims_api(df))
+                fire_table(fires)
       })
-          
-      ts <- fire_time_api(pt = df)
+          ts <- sf::st_filter(fire_ts, pt)
+      #     pt <- pt %>% st_as_sf(coords = c("lon", "lat"), crs = 4326)
+      # ts <- fire_time_api(pt = df)
 
   output$fireGraph <- renderHighchart({
           highchart() %>%
           hc_add_theme(hc_theme_alone()) %>%
-          hc_add_series(data = ts, name = "ACRES BURNED", type = "column", hcaes(x = year, y = acres)) %>%
+          hc_add_series(data = ts, name = "ACRES BURNED", type = "column", hcaes(x = year_, y = acres)) %>%
           hc_yAxis(title = list(text = "Acres")) %>% 
           hc_chart(plotBorderWidth = 1, plotBorderColor = '#b4b4b4', height = NULL) %>%
           hc_colors("darkred") %>%
@@ -669,16 +671,3 @@ highchartOutput("fireGraph")
 #       })
 
 ```
-
-
-
-
-
-
-
-
-
-
-
-
-

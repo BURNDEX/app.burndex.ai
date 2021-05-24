@@ -397,10 +397,6 @@ get_fires <- function(aoi, path) {
     rmapshaper::ms_simplify(keep = 0.01) %>%
     sf::st_transform(4326)
 }
-customGreen0 = "#DeF7E9"
-
-customGreen = "#71CA97"
-
 
 fire_table <- function(df) {
   tbl <- df %>%
@@ -408,8 +404,9 @@ fire_table <- function(df) {
     mutate(Area = st_area(df$geometry)) %>%
     st_drop_geometry()
 
-  tbl$acres <- round(tbl$acres, 2)
-  tbl$Area <- round(tbl$Area)
+  # tbl$acres <- round(tbl$acres, 2)
+  # tbl$Area <- round(tbl$Area)
+
   tbl <- tbl %>%
     janitor::clean_names(case = "title") %>%
     select(1:3, 6, 4, 5) %>%

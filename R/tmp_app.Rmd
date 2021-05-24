@@ -1,0 +1,1309 @@
+---
+title: "BURNDEX"
+runtime: shiny
+output: 
+  flexdashboard::flex_dashboard:
+    css: www/custom.css
+    navbar:
+      - { icon: "fa-question-circle", href: "https://burndex.pages.dev/", align: right }
+    orientation: columns
+    vertical_layout: fill
+---
+
+```{r setup, include = FALSE}
+# Shiny 
+library(shiny)
+library(flexdashboard)
+
+
+# Spatial & Climate data libraries
+library(leaflet)
+library(sf)
+library(raster)
+library(USAboundaries)
+library(USAboundariesData)
+library(dataRetrieval)
+library(climateR)
+# library(elevatr)
+
+# Data processing
+library(dplyr)
+library(highcharter)
+library(gt)
+library(mmtable2)
+library(stringr)
+library(lubridate)
+library(janitor)
+library(formattable)
+library(lwgeom)
+
+# Modeling libraries
+library(tidymodels)
+library(kknn)
+library(timetk)
+
+source('utils.R')
+source("api_utils.R")
+```
+
+<style type="text/css">
+span.code {
+      background:rgba(240,128,128, 0.2);
+      border-radius: 5px 5px 5px 5px;
+      padding-left:5px;
+      padding-top:2px;
+      padding-right:5px;
+      padding-bottom:2px;
+      color:red;
+     } 
+</style>
+
+```{r context="server"}
+
+# ML model
+# kknn_model <- readRDS("kknn_model.rds")
+# 
+# # Yearly state acreage burned for timeseries
+# fire_ts <- readRDS("fire_timeseries_data.rds")
+# 
+# path <- "us_fire_perim.gdb"
+
+#Initialize Maps 
+# react_map1 <- reactiveVal(basemap())
+# react_map2 <- reactiveVal(second_map())
+output$map1     <- renderLeaflet({ basemap() })
+output$map2     <- renderLeaflet({ second_map() })
+
+# Make spatial lat/lon point if Map 1 is clicked
+click_pt <- eventReactive(input$map1_click, {
+   click <- input$map1_click %>%
+      data.frame() %>%
+      dplyr::select(lat,lng)
+    # print(click)
+    pt <- sf::st_as_sf(click,
+                        coords = c("lng", "lat"),
+                        crs = 4326)
+})
+
+# Make spatial lat/lon point if Map 2 is clicked
+click_pt2 <- eventReactive(input$map2_click, {
+
+     click <- input$map2_click %>%
+      data.frame() %>%
+      dplyr::select(lat,lng)
+    # print(click)
+    pt <- sf::st_as_sf(click,
+                        coords = c("lng", "lat"),
+                        crs = 4326)
+})
+
+
+# Make non spatial lat/lon point dataframe if Map 1 is clicked
+make_point <-  eventReactive(input$map1_click, {
+  click <- input$map1_click%>%
+      data.frame() %>%
+      dplyr::select(lat,lng)
+})
+
+# Make non spatial lat/lon point dataframe if Map 2 is clicked
+make_point2 <-  eventReactive(input$map2_click, {
+  click <- input$map2_click%>%
+      data.frame() %>%
+      dplyr::select(lat,lng)
+})
+```
+
+
+
+Chandler Burning Index {data-icon="fa-burn"}
+=====================================
+
+Inputs {.sidebar}
+-------------------------------------
+
+### **MODEL INPUTS**
+***
+```{r}
+dateInput("dateSelect", label = "Prediction date:",
+          value = "2021-05-24",
+               # value = (Sys.Date() -1),
+               min = "1980-01-01",
+          max = "2100-01-01",
+               # max = (Sys.Date() -1),
+               format = "yyyy mm dd",
+               weekstart = 1)
+
+ # TEST API
+verbatimTextOutput("clickText")
+```
+
+
+```{r context = "server"}
+# summaryData <- eventReactive(input$map1_click, {
+#       make_table(click_pt())
+#     })
+# 
+# output$summaryTable <- render_gt({
+#           summaryData()
+#       })
+```
+
+```{r context = "server"}
+# Testing reactive date inputs
+dateText <- eventReactive(input$submitButton, {
+    format.Date(input$dateSelect)
+  })
+
+# Testing reactive date inputs
+testInputs <- eventReactive(input$submitButton, {
+    paste0(click_pt(), click_pt2())
+  })
+
+output$clickText <- renderText({
+  testInputs()
+})
+```
+ 
+### 
+```{r}
+shiny::actionButton("submitButton", label = "CBI prediction", icon("search"))
+```
+
+<br>
+
+The  <span class= "code" >Chandler Burning Index (CBI)</span> is numeric index for fire danger derived from  air temperature and relative humidity. The numeric index represents Fire Danger severity and values are categorized into either extreme, very high, high, moderate, or low fire danger severity. CBI is based only on weather conditions, with no adjustment for fuel moisture.
+
+<br>
+
+<span class= "code" >Get a CBI prediction:</span>
+
+***
+
+**1.** On the "Area of interest" map, locate and click on the area you would like a CBI prediction for.
+<br>
+**2.** Enter a date in the "Prediction date" input
+<br>
+**3.** Press the "CBI Prediction" button
+
+***
+
+*(Prediction will take 5-10 seconds to output as the model is running)*
+
+### 
+```{r}
+# gt_output("summaryTable")
+```
+
+Column {data-width=330}
+-------------------------------------
+###
+```{r}
+valueBoxOutput("countyValBox")
+```
+
+```{r context = "server"}
+
+# countyName <- eventReactive(input$map1_click, {
+#     pt <- click_pt()
+#     county <- USAboundaries::us_counties() %>%
+#         st_as_sf() %>% 
+#         st_intersection(pt) %>%
+#         st_drop_geometry()
+#     county
+#   })
+# 
+# # Render total US cases
+# output$countyValBox <- renderValueBox({
+#   county_info <- countyName()
+#     valueBox(value = paste0(county_info[1,6], " County, ", county_info[1,11]),
+#       icon = icon("user"),
+#       color = "#AD343E") })
+```
+
+
+### Area of interest
+```{r}
+leafletOutput("map1")
+```
+
+### {data-height=200}
+```{r}
+formattableOutput("fireTable")
+# formattableOutput("fireTable2")
+```
+
+```{r, context = "server"}
+# fireData <- eventReactive(input$map1_click, {
+#       bb <- get_county(click_pt())
+#       fire_table(fire_perims_api(make_point()))
+#     })
+# 
+# output$fireTable <- renderFormattable({
+#           fireData()
+#       })
+
+# fireData2 <- eventReactive(input$map2_click, {
+#   if(!is.null(input$map1_click)) {
+#     NULL
+#   } else {
+#       bb <- get_county(click_pt2())
+#       fire_table(fire_perims_api(make_point2()))
+#   }
+# })
+# 
+# output$fireTable2 <- renderFormattable({
+#           fireData2()
+#       })
+```
+
+```{r context = "server"}
+#Clicking on map 1 outputs Value boxes on both pages + catchment polygons + Dat table + info panel
+  observeEvent(input$map1_click, {
+   if(!is.null(input$map1_click)) {
+        pt <- click_pt()
+        # bb <- get_county(pt)
+        bb <- get_AOI(pt)
+          
+        # pop <- get_population(pt)
+        bounds <- st_bbox(bb) %>%
+                st_as_sfc() %>%
+                st_buffer(0.15) %>%
+                st_bbox() %>%
+                as.vector
+        county <- USAboundaries::us_counties() %>%
+            st_as_sf() %>% 
+            st_intersection(pt) %>%
+            st_drop_geometry()
+    # Render total US cases
+    output$countyValBox <- renderValueBox({
+          valueBox(
+            value = paste0(county[1,6]," County, ", county[1,11]),
+            icon = icon("user"),
+            color = "#AD343E")
+      })
+    
+        fires <- fire_perims_api(make_point())
+          # fires <<- get_fires(bb, path)
+        leafletProxy("map1") %>%
+              clearMarkers() %>%
+              clearShapes() %>%
+              addCircleMarkers(data = pt,
+                                 radius = 0.1,
+                                 stroke = FALSE) %>%
+              addPolygons(data = bb,
+                           fillColor = 'white',
+                           color = "white",
+                           weight = .5) %>%
+              addPolygons(data = fires,
+                          # label = ~fire_name,
+                            fillColor = "yellow",
+                            fillOpacity = 0.5,
+                            color = "white",
+                            weight = .5
+                            ) %>%
+              flyToBounds(bounds[1], bounds[2], bounds[3], bounds[4])
+    
+        leafletProxy("map2") %>%
+              clearMarkers() %>%
+              clearShapes() %>%
+              clearImages() %>%
+          clearControls() %>% 
+              # addRasterImage(x = pred) %>%
+              addCircleMarkers(data = pt,
+                                radius = 0) %>%
+              addPolygons(data = bb,
+                           fillColor = 'red',
+                           color = "white",
+                           weight = 2) %>% 
+              flyToBounds(bounds[1], bounds[2], bounds[3], bounds[4])
+              
+          
+      output$fireTable <- renderFormattable({
+                fire_table(fires)
+      })
+        
+         ts <- fire_time_api(pt = df)
+          
+      output$fireGraph <- renderHighchart({
+              highchart() %>%
+                  hc_add_theme(hc_theme_alone()) %>%
+                  hc_add_series(data = ts, name = "ACRES BURNED", type = "column", hcaes(x = year, y = acres)) %>%
+                  hc_yAxis(title = list(text = "Acres")) %>% 
+                  hc_chart(plotBorderWidth = 1, plotBorderColor = '#b4b4b4', height = NULL) %>%
+                  hc_colors("darkred") %>%
+                  hc_xAxis(categories = as.list(ts$year))
+      })
+    }
+})
+```
+
+```{r context = "server"}
+#Clicking on map 1 outputs Value boxes on both pages + catchment polygons + Dat table + info panel
+  observeEvent(input$map2_click, {
+   if(!is.null(input$map2_click)) {
+       
+      pt <- click_pt2()
+      # bb <- get_county(pt)
+      bb <- get_AOI(pt)
+      
+      # pop <- get_population(pt)
+      bounds <- st_bbox(bb) %>%
+            st_as_sfc() %>%
+            st_buffer(0.15) %>%
+            st_bbox() %>%
+            as.vector()
+      
+      county <- USAboundaries::us_counties() %>%
+            st_as_sf() %>% 
+            st_intersection(pt) %>%
+            st_drop_geometry()
+     
+    # Render total US cases
+    output$countyValBox <- renderValueBox({
+          valueBox(
+            value = paste0(county[1,6]," County, ", county[1,11]),
+            icon = icon("user"),
+            color = "#AD343E") })
+    
+      fires <- fire_perims_api(make_point2())
+      # fires <<- get_fires(bb, path)
+    
+      leafletProxy("map1") %>%
+          clearMarkers() %>%
+          clearShapes() %>%
+          addCircleMarkers(data = pt,
+                           radius = 0.1,
+                           stroke = FALSE) %>%
+          addPolygons(data = bb,
+                     fillColor = 'white',
+                     color = "white",
+                     weight = .5) %>%
+          addPolygons(data = fires,
+                      # label = ~fire_name,
+                      fillColor = "yellow",
+                      fillOpacity = 0.5,
+                      color = "white",
+                      weight = .5
+                      ) %>%
+          flyToBounds(bounds[1], bounds[2], bounds[3], bounds[4])
+
+      leafletProxy("map2") %>%
+        clearMarkers() %>%
+        clearShapes() %>%
+        clearImages() %>%
+        clearControls() %>% 
+        # addRasterImage(x = pred) %>%
+         addCircleMarkers(data = pt,
+                          radius = 0) %>%
+         addPolygons(data = bb,
+                     fillColor = 'red',
+                     color = "white",
+                     weight = 2) %>% 
+        flyToBounds(bounds[1], bounds[2], bounds[3], bounds[4])
+     
+      
+          output$fireTable <- renderFormattable({
+                fire_table(fires)
+      })
+          
+      ts <- fire_time_api(pt = df)
+
+  output$fireGraph <- renderHighchart({
+          highchart() %>%
+          hc_add_theme(hc_theme_alone()) %>%
+          hc_add_series(data = ts, name = "ACRES BURNED", type = "column", hcaes(x = year, y = acres)) %>%
+          hc_yAxis(title = list(text = "Acres")) %>% 
+          hc_chart(plotBorderWidth = 1, plotBorderColor = '#b4b4b4', height = NULL) %>%
+          hc_colors("darkred") %>%
+          hc_xAxis(categories = as.list(ts$year))
+})
+      # FIP <<- input$map1_marker_click$id
+      # leafletProxy('map3') %>%
+      #   zoom_to_county(counties, FIP)
+  
+     }
+
+})
+```
+
+```{r context = "server"}
+# Observes when submit button is pressed
+# observeEvent(input$submitButton, {
+#     if (!is.null(input$map1_click) | !is.null(input$map2_click)) {
+#         click_map1 <- click_pt()
+#         click_map2 <- click_pt2()
+#         if (!is.null(click_map1)) {
+#             clicked_point <- click_map1
+#             print('MAP1')
+#         } else if (!is.null(click_map2)) {
+#             clicked_point <- click_map2
+#             print('MAP2')
+#         } else {
+#             rlang::warn("No point clicked")
+#         }
+#         buffered_point <- clicked_point %>%
+#                           AOI::aoi_buffer(10, km = TRUE)
+#         bb <- sf::st_bbox(buffered_point) %>%
+#               sf::st_as_sfc() %>%
+#               sf::st_as_sf()
+#         bounds <- bb %>%
+#                   st_bbox() %>%
+#                   as.vector()
+#         r <- bx_raster(pt = bb, date = dateText())
+#         r <- mask(r, bb)
+#         pal <- colorNumeric("RdYlGn", reverse = TRUE, domain = values(r))
+#         leafletProxy("map2") %>%
+#             clearMarkers() %>%
+#             clearShapes() %>%
+#             clearImages() %>%
+#             addRasterImage(x = r, opacity = 0.7) %>%
+#             flyToBounds(bounds[1], bounds[2], bounds[3], bounds[4])
+#     } else {
+#         NULL
+#     }
+# })
+# observeEvent(input$submitButton, {
+#     if (!is.null(input$map1_click) | !is.null(input$map2_click)) {
+#         if (!is.null(click_pt())) {
+#             buffered_point <- click_pt() %>%
+#                               AOI::aoi_buffer(10, km = TRUE)
+#             bb <- sf::st_bbox(buffered_point) %>%
+#                   sf::st_as_sfc() %>%
+#                   sf::st_as_sf()
+#             bounds <- bb %>%
+#                       st_bbox() %>%
+#                       as.vector()
+#             r <- bx_raster(pt = bb, date = dateText())
+#             # r <- mask(r, bb)
+#             pal <- colorNumeric("RdYlGn", reverse = TRUE, domain = values(r))
+#             leafletProxy("map2") %>%
+#                 clearMarkers() %>%
+#                 clearShapes() %>%
+#                 clearImages() %>%
+#                 addRasterImage(x = r, opacity = 0.7) %>%
+#                 addLegend(
+#                   position = "topright",
+#                   colors = c("green", "blue", "yellow", "orange", "red"),
+#                   labels = c("Low", "Moderate", "High", "Very high", "Extreme")) %>%
+#                 flyToBounds(bounds[1], bounds[2], bounds[3], bounds[4])
+#         } else if (!is.null(click_pt2() & !is.null(click_pt()))) {
+#             buffered_point <- click_pt2() %>%
+#                               AOI::aoi_buffer(10, km = TRUE)
+#             bb <- sf::st_bbox(buffered_point) %>%
+#                   sf::st_as_sfc() %>%
+#                   sf::st_as_sf()
+#             bounds <- bb %>%
+#                       st_bbox() %>%
+#                       as.vector()
+#             r <- bx_raster(pt = bb, date = dateText())
+#             # r <- mask(r, bb)
+#             pal <- colorNumeric("RdYlGn", reverse = TRUE, domain = values(r))
+#             leafletProxy("map2") %>%
+#                 clearMarkers() %>%
+#                 clearShapes() %>%
+#                 clearImages() %>%
+#                 addRasterImage(x = r, opacity = 0.7) %>%
+#                 addLegend(
+#                   position = "topright",
+#                   colors = c("green", "blue", "yellow", "orange", "red"),
+#                   labels = c("Low", "Moderate", "High", "Very high", "Extreme")) %>%
+#                 flyToBounds(bounds[1], bounds[2], bounds[3], bounds[4])
+#         } else {
+#             rlang::warn("No point clicked")
+#         }
+#     }
+# })
+
+observeEvent(input$submitButton, {
+  if(is.null(input$map1_click)){
+    NULL
+  } else if(!is.null(input$map1_click)) {
+
+      pt <- click_pt()
+      # bb <- get_county(pt)
+      bb <- get_AOI(pt)
+
+      # Map 2 fly to bounds
+      bounds <- st_bbox(bb) %>%
+          st_as_sfc() %>%
+          st_buffer(0.15) %>%
+          st_bbox() %>%
+          as.vector()
+
+           print("prediction from map1 click")
+
+        r <- bx_raster(pt = bb, date = dateText())
+#             # r <- mask(r, bb)
+      pal <- colorNumeric("RdYlGn", reverse = TRUE, domain = values(r))
+      leafletProxy("map2") %>%
+          clearMarkers() %>%
+          clearShapes() %>%
+          clearImages() %>%
+        clearControls() %>% 
+          # addPolygons(data = fires) %>%
+          addRasterImage(x = r, opacity = 0.7) %>%
+        addLegend(position = "topright",
+            colors = c("green", "blue", "yellow", "orange", "red"),
+            labels = c("Low", "Moderate", "High", "Very high", "Extreme")) %>%
+        flyToBounds(bounds[1], bounds[2], bounds[3], bounds[4])
+
+# 
+#   } else if(!is.null(input$map2_click)) {
+#       pt <- click_pt2()
+#       # bb <- get_county(pt)
+#       bb <- get_AOI(pt)
+# 
+#       # Map 2 fly to bounds
+#       bounds <- st_bbox(bb) %>%
+#           st_as_sfc() %>%
+#           st_buffer(0.15) %>%
+#           st_bbox() %>%
+#           as.vector()
+# 
+#       print("prediction from map2 click")
+#       r <- get_prediction(pt = click_pt2(), date = dateText())
+#       # r <- mask(r, bb)
+#       print(names(r))
+# 
+#       pal = colorNumeric("RdYlGn", reverse= TRUE, domain = values(r))
+# 
+#       leafletProxy("map2") %>%
+#           clearMarkers() %>%
+#           clearShapes() %>%
+#           clearImages() %>%
+#           # addPolygons(data = fires) %>%
+#           addRasterImage(x = r, opacity = 0.7) %>%
+#         # addLegend(position = "topright",
+#         #     colors = c("green", "blue", "yellow", "orange", "red"),
+#         #     labels = c("Low", "Moderate", "High", "Very high", "Extreme")) %>%
+#         flyToBounds(bounds[1], bounds[2], bounds[3], bounds[4])
+
+     #  # terr <- get_terrain(bb)
+     # leafletProxy("map1") %>%
+     #      clearMarkers() %>%
+     #      clearShapes() %>%
+     #      clearImages() %>%
+     #    addPolygons(data = fires, label = ~fire_name) %>%
+     #      # addRasterImage(x = terr$slope) %>%
+     #    flyToBounds(bounds[1], bounds[2], bounds[3], bounds[4])
+  }
+})
+```
+
+Column {data-width=270}
+-------------------------------------
+### CBI {data-height=400}
+```{r}
+leafletOutput("map2")
+```
+
+### Acres burned
+```{r}
+highchartOutput("fireGraph")
+# highchartOutput("fireGraph2")
+```
+
+```{r context = "server"}
+# fireGraphData <- eventReactive(input$map1_click, {
+#       pt <- make_point()
+#       ts <- fire_time_api(pt)
+#       highchart() %>%
+#           hc_add_theme(hc_theme_alone()) %>%
+#           hc_add_series(data = ts, name = "ACRES BURNED", type = "column", hcaes(x = year, y = acres)) %>%
+#           hc_yAxis(title = list(text = "Acres")) %>% 
+#           hc_chart(plotBorderWidth = 1, plotBorderColor = '#b4b4b4', height = NULL) %>%
+#           hc_colors("darkred") %>%
+#           hc_xAxis(categories = as.list(ts$year))
+#     })
+# output$fireGraph <- renderHighchart({
+#           fireGraphData()
+# })
+# fireGraphData2 <- eventReactive(input$map1_click, {
+#   if(!is.null(input$map1_click)) {
+#          pt <- make_point()
+#       ts <- fire_time_api(pt)
+#       highchart() %>%
+#           hc_add_theme(hc_theme_alone()) %>%
+#           hc_add_series(data = ts, name = "ACRES BURNED", type = "column", hcaes(x = year, y = acres)) %>%
+#           hc_yAxis(title = list(text = "Acres")) %>% 
+#           hc_chart(plotBorderWidth = 1, plotBorderColor = '#b4b4b4', height = NULL) %>%
+#           hc_colors("darkred") %>%
+#           hc_xAxis(categories = as.list(ts$year))
+#     })
+#   } else if(!is.null(input$map2_click), {
+#       pt <- make_point2()
+#       ts <- fire_time_api(pt)
+#       highchart() %>%
+#           hc_add_theme(hc_theme_alone()) %>%
+#           hc_add_series(data = ts, name = "ACRES BURNED", type = "column", hcaes(x = year, y = acres)) %>%
+#           hc_yAxis(title = list(text = "Acres")) %>% 
+#           hc_chart(plotBorderWidth = 1, plotBorderColor = '#b4b4b4', height = NULL) %>%
+#           hc_colors("darkred") %>%
+#           hc_xAxis(categories = as.list(ts$year))
+#   }
+#     })
+
+# output$fireGraph2 <- renderHighchart({
+#           fireGraphData2()
+# })
+
+# fireGraphData2 <- eventReactive(input$map2_click, {
+#       pt <- make_point2()
+#       ts <- fire_time_api(pt)
+#       # ts <- st_filter(fire_ts, pt) %>% 
+#       #   st_drop_geometry()
+#       # ts <- rename(ts, year = year_, state = state_name)
+#       # ts$acres <- round(ts$acres)
+#       highchart() %>%
+#           hc_add_theme(hc_theme_alone()) %>%
+#           hc_add_series(data = ts, name = "ACRES BURNED", type = "column", hcaes(x = year, y = acres)) %>%
+#           hc_yAxis(title = list(text = "Acres")) %>% 
+#           hc_chart(plotBorderWidth = 1, plotBorderColor = '#b4b4b4', height = NULL) %>%
+#           hc_colors("darkred") %>%
+#           hc_xAxis(categories = as.list(ts$year))
+#     })
+
+# output$fireGraph <- renderHighchart({
+#           fireGraphData2()
+#       })
+
+```
+
+---
+title: "BURNDEX"
+runtime: shiny
+output: 
+  flexdashboard::flex_dashboard:
+    css: www/custom.css
+    navbar:
+      - { icon: "fa-question-circle", href: "https://burndex.pages.dev/", align: right }
+    orientation: columns
+    vertical_layout: fill
+---
+
+```{r setup, include = FALSE}
+# Shiny 
+library(shiny)
+library(flexdashboard)
+
+
+# Spatial & Climate data libraries
+library(leaflet)
+library(sf)
+library(raster)
+library(USAboundaries)
+library(USAboundariesData)
+library(dataRetrieval)
+library(climateR)
+# library(elevatr)
+
+# Data processing
+library(dplyr)
+library(highcharter)
+library(gt)
+library(mmtable2)
+library(stringr)
+library(lubridate)
+library(janitor)
+library(formattable)
+library(lwgeom)
+
+# Modeling libraries
+library(tidymodels)
+library(kknn)
+library(timetk)
+
+source('utils.R')
+source("api_utils.R")
+```
+
+<style type="text/css">
+span.code {
+      background:rgba(240,128,128, 0.2);
+      border-radius: 5px 5px 5px 5px;
+      padding-left:5px;
+      padding-top:2px;
+      padding-right:5px;
+      padding-bottom:2px;
+      color:red;
+     } 
+</style>
+
+```{r context="server"}
+
+# ML model
+# kknn_model <- readRDS("kknn_model.rds")
+# 
+# # Yearly state acreage burned for timeseries
+# fire_ts <- readRDS("fire_timeseries_data.rds")
+# 
+# path <- "us_fire_perim.gdb"
+
+#Initialize Maps 
+# react_map1 <- reactiveVal(basemap())
+# react_map2 <- reactiveVal(second_map())
+output$map1     <- renderLeaflet({ basemap() })
+output$map2     <- renderLeaflet({ second_map() })
+
+# Make spatial lat/lon point if Map 1 is clicked
+click_pt <- eventReactive(input$map1_click, {
+   click <- input$map1_click %>%
+      data.frame() %>%
+      dplyr::select(lat,lng)
+    # print(click)
+    pt <- sf::st_as_sf(click,
+                        coords = c("lng", "lat"),
+                        crs = 4326)
+})
+
+# Make spatial lat/lon point if Map 2 is clicked
+click_pt2 <- eventReactive(input$map2_click, {
+
+     click <- input$map2_click %>%
+      data.frame() %>%
+      dplyr::select(lat,lng)
+    # print(click)
+    pt <- sf::st_as_sf(click,
+                        coords = c("lng", "lat"),
+                        crs = 4326)
+})
+
+
+# Make non spatial lat/lon point dataframe if Map 1 is clicked
+make_point <-  eventReactive(input$map1_click, {
+  click <- input$map1_click%>%
+      data.frame() %>%
+      dplyr::select(lat,lng)
+})
+
+# Make non spatial lat/lon point dataframe if Map 2 is clicked
+make_point2 <-  eventReactive(input$map2_click, {
+  click <- input$map2_click%>%
+      data.frame() %>%
+      dplyr::select(lat,lng)
+})
+```
+
+
+
+Chandler Burning Index {data-icon="fa-burn"}
+=====================================
+
+Inputs {.sidebar}
+-------------------------------------
+
+### **MODEL INPUTS**
+***
+```{r}
+dateInput("dateSelect", label = "Prediction date:",
+          value = "2021-05-24",
+               # value = (Sys.Date() -1),
+               min = "1980-01-01",
+          max = "2100-01-01",
+               # max = (Sys.Date() -1),
+               format = "yyyy mm dd",
+               weekstart = 1)
+
+ # TEST API
+verbatimTextOutput("clickText")
+```
+
+
+```{r context = "server"}
+# summaryData <- eventReactive(input$map1_click, {
+#       make_table(click_pt())
+#     })
+# 
+# output$summaryTable <- render_gt({
+#           summaryData()
+#       })
+```
+
+```{r context = "server"}
+# Testing reactive date inputs
+dateText <- eventReactive(input$submitButton, {
+    format.Date(input$dateSelect)
+  })
+
+# Testing reactive date inputs
+testInputs <- eventReactive(input$submitButton, {
+    paste0(click_pt(), click_pt2())
+  })
+
+output$clickText <- renderText({
+  testInputs()
+})
+```
+ 
+### 
+```{r}
+shiny::actionButton("submitButton", label = "CBI prediction", icon("search"))
+```
+
+<br>
+
+The  <span class= "code" >Chandler Burning Index (CBI)</span> is numeric index for fire danger derived from  air temperature and relative humidity. The numeric index represents Fire Danger severity and values are categorized into either extreme, very high, high, moderate, or low fire danger severity. CBI is based only on weather conditions, with no adjustment for fuel moisture.
+
+<br>
+
+<span class= "code" >Get a CBI prediction:</span>
+
+***
+
+**1.** On the "Area of interest" map, locate and click on the area you would like a CBI prediction for.
+<br>
+**2.** Enter a date in the "Prediction date" input
+<br>
+**3.** Press the "CBI Prediction" button
+
+***
+
+*(Prediction will take 5-10 seconds to output as the model is running)*
+
+### 
+```{r}
+# gt_output("summaryTable")
+```
+
+Column {data-width=330}
+-------------------------------------
+###
+```{r}
+valueBoxOutput("countyValBox")
+```
+
+```{r context = "server"}
+
+# countyName <- eventReactive(input$map1_click, {
+#     pt <- click_pt()
+#     county <- USAboundaries::us_counties() %>%
+#         st_as_sf() %>% 
+#         st_intersection(pt) %>%
+#         st_drop_geometry()
+#     county
+#   })
+# 
+# # Render total US cases
+# output$countyValBox <- renderValueBox({
+#   county_info <- countyName()
+#     valueBox(value = paste0(county_info[1,6], " County, ", county_info[1,11]),
+#       icon = icon("user"),
+#       color = "#AD343E") })
+```
+
+
+### Area of interest
+```{r}
+leafletOutput("map1")
+```
+
+```{r context = "server"}
+#Clicking on map 1 outputs Value boxes on both pages + catchment polygons + Dat table + info panel
+  observeEvent(input$map1_click, {
+   if(!is.null(input$map1_click)) {
+        pt <- click_pt()
+        # bb <- get_county(pt)
+        bb <- get_AOI(pt)
+          
+        # pop <- get_population(pt)
+        bounds <- st_bbox(bb) %>%
+                st_as_sfc() %>%
+                st_buffer(0.15) %>%
+                st_bbox() %>%
+                as.vector
+        county <- USAboundaries::us_counties() %>%
+            st_as_sf() %>% 
+            st_intersection(pt) %>%
+            st_drop_geometry()
+    # Render total US cases
+    output$countyValBox <- renderValueBox({
+          valueBox(
+            value = paste0(county[1,6]," County, ", county[1,11]),
+            icon = icon("user"),
+            color = "#AD343E")
+      })
+    
+        fires <- fire_perims_api(make_point())
+          # fires <<- get_fires(bb, path)
+        leafletProxy("map1") %>%
+              clearMarkers() %>%
+              clearShapes() %>%
+              addCircleMarkers(data = pt,
+                                 radius = 0.1,
+                                 stroke = FALSE) %>%
+              addPolygons(data = bb,
+                           fillColor = 'white',
+                           color = "white",
+                           weight = .5) %>%
+              addPolygons(data = fires,
+                          # label = ~fire_name,
+                            fillColor = "yellow",
+                            fillOpacity = 0.5,
+                            color = "white",
+                            weight = .5
+                            ) %>%
+              flyToBounds(bounds[1], bounds[2], bounds[3], bounds[4])
+    
+        leafletProxy("map2") %>%
+              clearMarkers() %>%
+              clearShapes() %>%
+              clearImages() %>%
+          clearControls() %>% 
+              # addRasterImage(x = pred) %>%
+              addCircleMarkers(data = pt,
+                                radius = 0) %>%
+              addPolygons(data = bb,
+                           fillColor = 'red',
+                           color = "white",
+                           weight = 2) %>% 
+              flyToBounds(bounds[1], bounds[2], bounds[3], bounds[4])
+              
+          df <- make_point()
+         ts <- fire_time_api(pt = df)
+          
+      output$fireGraph <- renderHighchart({
+              highchart() %>%
+                  hc_add_theme(hc_theme_alone()) %>%
+                  hc_add_series(data = ts, name = "ACRES BURNED", type = "column", hcaes(x = year, y = acres)) %>%
+                  hc_yAxis(title = list(text = "Acres")) %>% 
+                  hc_chart(plotBorderWidth = 1, plotBorderColor = '#b4b4b4', height = NULL) %>%
+                  hc_colors("darkred") %>%
+                  hc_xAxis(categories = as.list(ts$year))
+      })
+    }
+})
+```
+
+```{r context = "server"}
+#Clicking on map 1 outputs Value boxes on both pages + catchment polygons + Dat table + info panel
+  observeEvent(input$map2_click, {
+   if(!is.null(input$map2_click)) {
+       
+      pt <- click_pt2()
+      # bb <- get_county(pt)
+      bb <- get_AOI(pt)
+      
+      # pop <- get_population(pt)
+      bounds <- st_bbox(bb) %>%
+            st_as_sfc() %>%
+            st_buffer(0.15) %>%
+            st_bbox() %>%
+            as.vector()
+      
+      county <- USAboundaries::us_counties() %>%
+            st_as_sf() %>% 
+            st_intersection(pt) %>%
+            st_drop_geometry()
+     
+    # Render total US cases
+    output$countyValBox <- renderValueBox({
+          valueBox(
+            value = paste0(county[1,6]," County, ", county[1,11]),
+            icon = icon("user"),
+            color = "#AD343E") })
+    
+      fires <- fire_perims_api(make_point2())
+      # fires <<- get_fires(bb, path)
+    
+      leafletProxy("map1") %>%
+          clearMarkers() %>%
+          clearShapes() %>%
+          addCircleMarkers(data = pt,
+                           radius = 0.1,
+                           stroke = FALSE) %>%
+          addPolygons(data = bb,
+                     fillColor = 'white',
+                     color = "white",
+                     weight = .5) %>%
+          addPolygons(data = fires,
+                      # label = ~fire_name,
+                      fillColor = "yellow",
+                      fillOpacity = 0.5,
+                      color = "white",
+                      weight = .5
+                      ) %>%
+          flyToBounds(bounds[1], bounds[2], bounds[3], bounds[4])
+
+      leafletProxy("map2") %>%
+        clearMarkers() %>%
+        clearShapes() %>%
+        clearImages() %>%
+        clearControls() %>% 
+        # addRasterImage(x = pred) %>%
+         addCircleMarkers(data = pt,
+                          radius = 0) %>%
+         addPolygons(data = bb,
+                     fillColor = 'red',
+                     color = "white",
+                     weight = 2) %>% 
+        flyToBounds(bounds[1], bounds[2], bounds[3], bounds[4])
+     
+      df <- make_point2()
+
+      ts <- fire_time_api(pt = df)
+
+  output$fireGraph <- renderHighchart({
+          highchart() %>%
+          hc_add_theme(hc_theme_alone()) %>%
+          hc_add_series(data = ts, name = "ACRES BURNED", type = "column", hcaes(x = year, y = acres)) %>%
+          hc_yAxis(title = list(text = "Acres")) %>% 
+          hc_chart(plotBorderWidth = 1, plotBorderColor = '#b4b4b4', height = NULL) %>%
+          hc_colors("darkred") %>%
+          hc_xAxis(categories = as.list(ts$year))
+})
+      # FIP <<- input$map1_marker_click$id
+      # leafletProxy('map3') %>%
+      #   zoom_to_county(counties, FIP)
+  
+     }
+
+})
+```
+
+```{r context = "server"}
+# Observes when submit button is pressed
+# observeEvent(input$submitButton, {
+#     if (!is.null(input$map1_click) | !is.null(input$map2_click)) {
+#         click_map1 <- click_pt()
+#         click_map2 <- click_pt2()
+#         if (!is.null(click_map1)) {
+#             clicked_point <- click_map1
+#             print('MAP1')
+#         } else if (!is.null(click_map2)) {
+#             clicked_point <- click_map2
+#             print('MAP2')
+#         } else {
+#             rlang::warn("No point clicked")
+#         }
+#         buffered_point <- clicked_point %>%
+#                           AOI::aoi_buffer(10, km = TRUE)
+#         bb <- sf::st_bbox(buffered_point) %>%
+#               sf::st_as_sfc() %>%
+#               sf::st_as_sf()
+#         bounds <- bb %>%
+#                   st_bbox() %>%
+#                   as.vector()
+#         r <- bx_raster(pt = bb, date = dateText())
+#         r <- mask(r, bb)
+#         pal <- colorNumeric("RdYlGn", reverse = TRUE, domain = values(r))
+#         leafletProxy("map2") %>%
+#             clearMarkers() %>%
+#             clearShapes() %>%
+#             clearImages() %>%
+#             addRasterImage(x = r, opacity = 0.7) %>%
+#             flyToBounds(bounds[1], bounds[2], bounds[3], bounds[4])
+#     } else {
+#         NULL
+#     }
+# })
+# observeEvent(input$submitButton, {
+#     if (!is.null(input$map1_click) | !is.null(input$map2_click)) {
+#         if (!is.null(click_pt())) {
+#             buffered_point <- click_pt() %>%
+#                               AOI::aoi_buffer(10, km = TRUE)
+#             bb <- sf::st_bbox(buffered_point) %>%
+#                   sf::st_as_sfc() %>%
+#                   sf::st_as_sf()
+#             bounds <- bb %>%
+#                       st_bbox() %>%
+#                       as.vector()
+#             r <- bx_raster(pt = bb, date = dateText())
+#             # r <- mask(r, bb)
+#             pal <- colorNumeric("RdYlGn", reverse = TRUE, domain = values(r))
+#             leafletProxy("map2") %>%
+#                 clearMarkers() %>%
+#                 clearShapes() %>%
+#                 clearImages() %>%
+#                 addRasterImage(x = r, opacity = 0.7) %>%
+#                 addLegend(
+#                   position = "topright",
+#                   colors = c("green", "blue", "yellow", "orange", "red"),
+#                   labels = c("Low", "Moderate", "High", "Very high", "Extreme")) %>%
+#                 flyToBounds(bounds[1], bounds[2], bounds[3], bounds[4])
+#         } else if (!is.null(click_pt2() & !is.null(click_pt()))) {
+#             buffered_point <- click_pt2() %>%
+#                               AOI::aoi_buffer(10, km = TRUE)
+#             bb <- sf::st_bbox(buffered_point) %>%
+#                   sf::st_as_sfc() %>%
+#                   sf::st_as_sf()
+#             bounds <- bb %>%
+#                       st_bbox() %>%
+#                       as.vector()
+#             r <- bx_raster(pt = bb, date = dateText())
+#             # r <- mask(r, bb)
+#             pal <- colorNumeric("RdYlGn", reverse = TRUE, domain = values(r))
+#             leafletProxy("map2") %>%
+#                 clearMarkers() %>%
+#                 clearShapes() %>%
+#                 clearImages() %>%
+#                 addRasterImage(x = r, opacity = 0.7) %>%
+#                 addLegend(
+#                   position = "topright",
+#                   colors = c("green", "blue", "yellow", "orange", "red"),
+#                   labels = c("Low", "Moderate", "High", "Very high", "Extreme")) %>%
+#                 flyToBounds(bounds[1], bounds[2], bounds[3], bounds[4])
+#         } else {
+#             rlang::warn("No point clicked")
+#         }
+#     }
+# })
+
+observeEvent(input$submitButton, {
+  if(is.null(input$map1_click)){
+    NULL
+  } else if(!is.null(input$map1_click)) {
+
+      pt <- click_pt()
+      # bb <- get_county(pt)
+      bb <- get_AOI(pt)
+
+      # Map 2 fly to bounds
+      bounds <- st_bbox(bb) %>%
+          st_as_sfc() %>%
+          st_buffer(0.15) %>%
+          st_bbox() %>%
+          as.vector()
+
+           print("prediction from map1 click")
+
+        r <- bx_raster(pt = bb, date = dateText())
+#             # r <- mask(r, bb)
+      pal <- colorNumeric("RdYlGn", reverse = TRUE, domain = values(r))
+      leafletProxy("map2") %>%
+          clearMarkers() %>%
+          clearShapes() %>%
+          clearImages() %>%
+        clearControls() %>% 
+          # addPolygons(data = fires) %>%
+          addRasterImage(x = r, opacity = 0.7) %>%
+        addLegend(position = "topright",
+            colors = c("green", "blue", "yellow", "orange", "red"),
+            labels = c("Low", "Moderate", "High", "Very high", "Extreme")) %>%
+        flyToBounds(bounds[1], bounds[2], bounds[3], bounds[4])
+
+# 
+#   } else if(!is.null(input$map2_click)) {
+#       pt <- click_pt2()
+#       # bb <- get_county(pt)
+#       bb <- get_AOI(pt)
+# 
+#       # Map 2 fly to bounds
+#       bounds <- st_bbox(bb) %>%
+#           st_as_sfc() %>%
+#           st_buffer(0.15) %>%
+#           st_bbox() %>%
+#           as.vector()
+# 
+#       print("prediction from map2 click")
+#       r <- get_prediction(pt = click_pt2(), date = dateText())
+#       # r <- mask(r, bb)
+#       print(names(r))
+# 
+#       pal = colorNumeric("RdYlGn", reverse= TRUE, domain = values(r))
+# 
+#       leafletProxy("map2") %>%
+#           clearMarkers() %>%
+#           clearShapes() %>%
+#           clearImages() %>%
+#           # addPolygons(data = fires) %>%
+#           addRasterImage(x = r, opacity = 0.7) %>%
+#         # addLegend(position = "topright",
+#         #     colors = c("green", "blue", "yellow", "orange", "red"),
+#         #     labels = c("Low", "Moderate", "High", "Very high", "Extreme")) %>%
+#         flyToBounds(bounds[1], bounds[2], bounds[3], bounds[4])
+
+     #  # terr <- get_terrain(bb)
+     # leafletProxy("map1") %>%
+     #      clearMarkers() %>%
+     #      clearShapes() %>%
+     #      clearImages() %>%
+     #    addPolygons(data = fires, label = ~fire_name) %>%
+     #      # addRasterImage(x = terr$slope) %>%
+     #    flyToBounds(bounds[1], bounds[2], bounds[3], bounds[4])
+  }
+})
+```
+
+Column {data-width=270}
+-------------------------------------
+### CBI {data-height=400}
+```{r}
+leafletOutput("map2")
+```
+
+### Acres burned
+```{r}
+highchartOutput("fireGraph")
+# highchartOutput("fireGraph2")
+```
+
+```{r context = "server"}
+# fireGraphData <- eventReactive(input$map1_click, {
+#       pt <- make_point()
+#       ts <- fire_time_api(pt)
+#       highchart() %>%
+#           hc_add_theme(hc_theme_alone()) %>%
+#           hc_add_series(data = ts, name = "ACRES BURNED", type = "column", hcaes(x = year, y = acres)) %>%
+#           hc_yAxis(title = list(text = "Acres")) %>% 
+#           hc_chart(plotBorderWidth = 1, plotBorderColor = '#b4b4b4', height = NULL) %>%
+#           hc_colors("darkred") %>%
+#           hc_xAxis(categories = as.list(ts$year))
+#     })
+# output$fireGraph <- renderHighchart({
+#           fireGraphData()
+# })
+# fireGraphData2 <- eventReactive(input$map1_click, {
+#   if(!is.null(input$map1_click)) {
+#          pt <- make_point()
+#       ts <- fire_time_api(pt)
+#       highchart() %>%
+#           hc_add_theme(hc_theme_alone()) %>%
+#           hc_add_series(data = ts, name = "ACRES BURNED", type = "column", hcaes(x = year, y = acres)) %>%
+#           hc_yAxis(title = list(text = "Acres")) %>% 
+#           hc_chart(plotBorderWidth = 1, plotBorderColor = '#b4b4b4', height = NULL) %>%
+#           hc_colors("darkred") %>%
+#           hc_xAxis(categories = as.list(ts$year))
+#     })
+#   } else if(!is.null(input$map2_click), {
+#       pt <- make_point2()
+#       ts <- fire_time_api(pt)
+#       highchart() %>%
+#           hc_add_theme(hc_theme_alone()) %>%
+#           hc_add_series(data = ts, name = "ACRES BURNED", type = "column", hcaes(x = year, y = acres)) %>%
+#           hc_yAxis(title = list(text = "Acres")) %>% 
+#           hc_chart(plotBorderWidth = 1, plotBorderColor = '#b4b4b4', height = NULL) %>%
+#           hc_colors("darkred") %>%
+#           hc_xAxis(categories = as.list(ts$year))
+#   }
+#     })
+
+# output$fireGraph2 <- renderHighchart({
+#           fireGraphData2()
+# })
+
+# fireGraphData2 <- eventReactive(input$map2_click, {
+#       pt <- make_point2()
+#       ts <- fire_time_api(pt)
+#       # ts <- st_filter(fire_ts, pt) %>% 
+#       #   st_drop_geometry()
+#       # ts <- rename(ts, year = year_, state = state_name)
+#       # ts$acres <- round(ts$acres)
+#       highchart() %>%
+#           hc_add_theme(hc_theme_alone()) %>%
+#           hc_add_series(data = ts, name = "ACRES BURNED", type = "column", hcaes(x = year, y = acres)) %>%
+#           hc_yAxis(title = list(text = "Acres")) %>% 
+#           hc_chart(plotBorderWidth = 1, plotBorderColor = '#b4b4b4', height = NULL) %>%
+#           hc_colors("darkred") %>%
+#           hc_xAxis(categories = as.list(ts$year))
+#     })
+
+# output$fireGraph <- renderHighchart({
+#           fireGraphData2()
+#       })
+
+```
+
+
+
+
+

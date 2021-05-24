@@ -3,7 +3,7 @@
 # lon = -119.7
 # pt = c(lon, lat)
 # pt = data.frame(lon, lat)
-
+# pt <- st_as_af
 # send post request to API to create AOI poly
 api_aoi <- function(pt) {
   pt <- jsonlite::toJSON(pt)
@@ -16,14 +16,21 @@ api_aoi <- function(pt) {
 
 # send post request to API for historical fire perimeters within AOI
 fire_perims_api <- function(pt) {
-  pt <- jsonlite::toJSON(pt)
-  post <- httr::content(httr::POST(
+  pt <- pt %>%
+    sf::st_coordinates() %>%
+  tibble::as_tibble() %>%
+    setNames(c("lng", "lat"))
+  post <- httr::POST(
     url = "https://api.burndex.ai/fires",
-    query = list(pt = pt)
-  ))
-  geojsonsf::geojson_sf(post[[1]])
+    query = list(
+      lat = pt$lat,
+      lon = pt$lng
+    )
+  )
+  httr::stop_for_status(post)
+  content <- httr::content(post, encoding = "application/json")
+  geojsonsf::geojson_sf(content[[1]])
 }
-
 # send post request to API for historical fire perimeters within AOI
 fire_time_api <- function(pt) {
   pt <- jsonlite::toJSON(pt)
